@@ -1,170 +1,167 @@
 # AXI4-Lite Register Block Verification using SystemVerilog and UVM
 
-## Overview
+A complete verification environment for a **32-bit AXI4-Lite register block**, developed using **SystemVerilog, UVM, SVA, UVM RAL, constrained-random verification, functional coverage, and Synopsys VCS/URG**.
 
-This project implements and verifies a 32-bit AXI4-Lite slave register block using SystemVerilog and the Universal Verification Methodology (UVM).
-
-The DUT contains four memory-mapped registers:
-
-- `CONTROL`
-- `STATUS`
-- `CONFIG`
-- `IRQ_ENABLE`
-
-The design supports independent AXI4-Lite read and write channels, byte-enable writes using `WSTRB`, error responses for invalid or illegal accesses, and START/BUSY/DONE control behavior.
-
-The verification environment combines:
-
-- Directed testing
-- Constrained-random stimulus
-- Negative testing
-- SystemVerilog Assertions (SVA)
-- Functional coverage
-- Code coverage
-- Self-checking scoreboard
-- UVM Register Abstraction Layer (RAL)
-- Automated regression using Synopsys VCS and URG
-
-Coverage-driven verification was used to identify missing scenarios and develop targeted legal stimulus. Coverage closure was evaluated alongside protocol assertions rather than treating coverage percentage alone as proof of correctness.
+The project verifies AXI4-Lite protocol behavior, register functionality, error responses, byte-write strobes, channel ordering, backpressure, reset recovery, and register-model behavior using both directed and UVM-based verification.
 
 ---
 
 ## Verification Results
 
-The final clean regression achieved:
-
 | Metric | Result |
 |---|---:|
-| Directed tests | **12/12 passed** |
-| Directed-test failures | **0** |
+| Directed tests | **12 / 12 passed** |
 | UVM errors | **0** |
 | UVM fatals | **0** |
-| RAL UVM errors / fatals | **0 / 0** |
+| RAL errors | **0** |
+| RAL fatals | **0** |
 | SVA failures | **0** |
 | Modeled functional coverage | **100%** |
 | DUT line coverage | **100%** |
 | DUT branch coverage | **93.94%** |
 | DUT condition coverage | **72.73%** |
-| WSTRB values exercised | **16/16** |
-| SVA properties | **12** |
+| DUT toggle coverage | **48.01%** |
 
-Functional coverage refers specifically to the implemented verification coverage model and does not imply that every possible DUT behavior has been exhaustively verified.
+> **Note:** 100% functional coverage refers specifically to all bins and crosses defined in this project's functional coverage model. It does not imply exhaustive verification of every possible AXI4-Lite behavior.
 
 ---
 
-## DUT Architecture
+## DUT Overview
 
-The DUT is a 32-bit AXI4-Lite slave implementing a small memory-mapped register block.
-
-### Register Map
+The DUT implements a **32-bit AXI4-Lite slave register block** with four memory-mapped registers.
 
 | Address | Register | Access | Description |
 |---|---|---|---|
-| `0x00` | CONTROL | R/W | Contains the START control bit |
-| `0x04` | STATUS | R/O | Reports BUSY, DONE, and ERROR status |
+| `0x00` | CONTROL | R/W | Bit 0 is a self-clearing START bit |
+| `0x04` | STATUS | R/O | BUSY, DONE, and ERROR status |
 | `0x08` | CONFIG | R/W | 32-bit configuration register |
 | `0x0C` | IRQ_ENABLE | R/W | 32-bit interrupt-enable register |
 
-### CONTROL Register
-
-| Bit | Field | Access | Description |
-|---|---|---|---|
-| 0 | START | R/W | Starts an operation and self-clears |
-| 31:1 | Reserved | - | Unused |
-
 ### STATUS Register
 
-| Bit | Field | Access | Description |
-|---|---|---|---|
-| 0 | BUSY | R/O | Indicates an operation is in progress |
-| 1 | DONE | R/O | Indicates operation completion |
-| 2 | ERROR | R/O | Indicates an error condition |
-| 31:3 | Reserved | R/O | Reads as zero |
+| Bit | Field |
+|---|---|
+| `[0]` | BUSY |
+| `[1]` | DONE |
+| `[2]` | ERROR |
+| `[31:3]` | Reserved / zero |
+
+Writing `START = 1` begins a modeled operation.
+
+The DUT:
+
+- asserts `BUSY`
+- automatically clears the START bit
+- executes the modeled operation
+- deasserts `BUSY`
+- asserts `DONE`
+
+Writes to the read-only STATUS register and accesses to unsupported addresses return an AXI4-Lite `SLVERR`.
 
 ---
 
 ## AXI4-Lite Interface
 
-The DUT implements the five AXI4-Lite channels:
+The design implements the five AXI4-Lite channels:
 
-| Channel | Purpose | Signals |
-|---|---|---|
-| Write Address | Transfers the write address | `AWADDR`, `AWVALID`, `AWREADY` |
-| Write Data | Transfers write data and byte strobes | `WDATA`, `WSTRB`, `WVALID`, `WREADY` |
-| Write Response | Returns write status | `BRESP`, `BVALID`, `BREADY` |
-| Read Address | Transfers the read address | `ARADDR`, `ARVALID`, `ARREADY` |
-| Read Data | Returns read data and response | `RDATA`, `RRESP`, `RVALID`, `RREADY` |
+### Write Address Channel
 
-A channel transfer occurs on a rising clock edge when both `VALID` and `READY` are asserted.
+```text
+AWADDR
+AWVALID
+AWREADY
+```
 
-The write-address and write-data channels are handled independently. The DUT captures AW and W transactions separately and performs the register write after both have been received.
+### Write Data Channel
 
-The implementation supports:
+```text
+WDATA
+WSTRB
+WVALID
+WREADY
+```
 
-- AW-before-W transactions
-- W-before-AW transactions
-- Write-response backpressure
-- Read-response backpressure
-- Partial writes using `WSTRB`
-- Invalid-address handling
-- Read-only register protection
-- Reset and post-reset recovery
+### Write Response Channel
 
-Successful accesses return `OKAY (2'b00)`. Invalid or illegal accesses return `SLVERR (2'b10)`.
+```text
+BRESP
+BVALID
+BREADY
+```
+
+### Read Address Channel
+
+```text
+ARADDR
+ARVALID
+ARREADY
+```
+
+### Read Data Channel
+
+```text
+RDATA
+RRESP
+RVALID
+RREADY
+```
+
+A transfer occurs when `VALID` and `READY` are both asserted on a rising clock edge.
+
+The implementation supports independent write-address and write-data arrival, allowing both **AW-before-W** and **W-before-AW** transactions.
 
 ---
 
-# Verification Architecture
+## Verification Architecture
 
-The verification environment was developed using UVM with separate components for stimulus generation, protocol driving, monitoring, checking, functional coverage, and register-model prediction.
-
-Conceptually, the environment follows:
+The UVM environment follows a standard layered architecture:
 
 ```text
-                         +------------------+
-                         |    Sequences     |
-                         +--------+---------+
-                                  |
-                                  v
-                         +------------------+
-                         |    Sequencer     |
-                         +--------+---------+
-                                  |
-                                  v
-                         +------------------+
-                         |      Driver      |
-                         +--------+---------+
-                                  |
-                                  v
-                         +------------------+
-                         | AXI-Lite Interface|
-                         +--------+---------+
-                                  |
-                                  v
-                         +------------------+
-                         |       DUT        |
-                         +--------+---------+
-                                  |
-                                  v
-                         +------------------+
-                         |     Monitor      |
-                         +----+--------+----+
-                              |        |
-                    +---------+        +-----------+
-                    v                              v
-             +-------------+                +-------------+
-             | Scoreboard  |                |  Coverage   |
-             +-------------+                +-------------+
-                    |
-                    +--------------------+
-                                         |
-                                         v
-                                +-----------------+
-                                | RAL Predictor   |
-                                +-----------------+
-
-                   SVA assertions observe protocol
-                   and functional behavior directly.
+                    +------------------+
+                    |       Test       |
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |     Sequence     |
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |    Sequencer     |
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |      Driver      |
+                    +--------+---------+
+                             |
+                             v
++-------------------------------------------------------+
+|                  AXI4-Lite Interface                  |
++---------------------------+---------------------------+
+                            |
+                            v
+                    +------------------+
+                    |       DUT        |
+                    +------------------+
+                            |
+                            v
+                    +------------------+
+                    |     Monitor      |
+                    +--------+---------+
+                             |
+              +--------------+--------------+
+              |                             |
+              v                             v
+     +------------------+          +------------------+
+     |    Scoreboard    |          | Functional Cov.  |
+     +------------------+          +------------------+
+              |
+              v
+     +------------------+
+     | RAL Predictor    |
+     +------------------+
 ```
 
 ---
@@ -173,164 +170,176 @@ Conceptually, the environment follows:
 
 ### Sequence Item
 
-The AXI-Lite transaction object represents a protocol operation and contains fields including:
+`axi_lite_seq_item` represents AXI4-Lite transactions and contains:
 
-- Operation type: read or write
-- Address
-- Write data
-- Write strobe
-- Response
+- operation type
+- address
+- write data
+- write strobe
+- response
 
-Constraints generate legal register accesses during normal constrained-random testing.
+The transaction supports both `AXI_READ` and `AXI_WRITE` operations.
 
-Illegal operations are generated explicitly by negative-test sequences rather than weakening the legal constraints used by the normal stimulus.
+---
 
 ### Sequences
 
-The environment includes stimulus for:
+The environment includes:
 
-- Constrained-random register transactions
-- Invalid-address accesses
-- Writes to the read-only STATUS register
-- Partial writes
-- All 16 possible `WSTRB` values
-- Register-model accesses
+- smoke testing
+- constrained-random traffic
+- negative/error testing
+- WSTRB coverage closure
+- RAL-based register testing
 
-This allows broad random exploration while retaining targeted control over important corner cases.
+Random transactions are constrained to valid register addresses during normal traffic.
 
-### Sequencer
+Dedicated negative sequences intentionally exercise illegal operations such as:
 
-The sequencer arbitrates sequence items and supplies transactions to the AXI-Lite driver.
+- writing to STATUS
+- writing to an invalid address
+- reading from an invalid address
+
+---
 
 ### Driver
 
-The driver converts transaction-level sequence items into pin-level AXI4-Lite activity.
+The driver converts transaction-level sequence items into AXI4-Lite signal activity.
 
-It independently drives the write-address, write-data, write-response, read-address, and read-data channel handshakes according to the transaction being executed.
+It handles:
+
+- write-address handshakes
+- write-data handshakes
+- write responses
+- read-address handshakes
+- read responses
+
+The implementation respects AXI4-Lite `VALID/READY` timing requirements.
+
+---
 
 ### Monitor
 
-The monitor passively observes completed AXI4-Lite transactions.
+The monitor passively observes AXI4-Lite activity and reconstructs completed transactions.
 
-Observed transactions are distributed through analysis ports to:
+Observed transactions are published through a UVM analysis port to:
 
-- The scoreboard
-- Functional coverage collector
-- UVM RAL predictor
+- the scoreboard
+- functional coverage
+- the RAL predictor
 
-This ensures checking and coverage are based on activity actually observed on the DUT interface rather than only on intended stimulus.
+---
 
 ### Scoreboard
 
-The scoreboard maintains a reference model of expected register state and compares predicted behavior against transactions observed by the monitor.
+The scoreboard maintains a reference model of expected register state.
 
-Checks include:
+It verifies:
 
-- Register write/readback consistency
-- Partial `WSTRB` writes
-- Read-only STATUS behavior
-- Invalid-address behavior
-- AXI response values
+- CONFIG writes and reads
+- IRQ_ENABLE writes and reads
+- byte-enabled writes
+- read-only STATUS behavior
+- invalid-address responses
+- expected AXI4-Lite response values
 
-### Functional Coverage
-
-Functional coverage tracks:
-
-- Read versus write operations
-- Register addresses
-- AXI response types
-- All 16 `WSTRB` values
-- Operation × address cross coverage
-
-The final clean regression closed all modeled functional coverage bins.
+Observed DUT behavior is compared against the predicted state.
 
 ---
 
-# UVM Register Abstraction Layer
+### Agent
 
-A UVM RAL model was implemented for the complete register map.
+The AXI4-Lite agent encapsulates:
+
+```text
+Sequencer
+Driver
+Monitor
+```
+
+The agent provides the reusable protocol-level verification component used by the environment.
+
+---
+
+## UVM Register Abstraction Layer
+
+A UVM RAL model is included for the register block.
 
 The model represents:
 
-- CONTROL
-- STATUS
-- CONFIG
-- IRQ_ENABLE
+```text
+CONTROL
+STATUS
+CONFIG
+IRQ_ENABLE
+```
 
-Register fields include their corresponding:
+with their corresponding addresses and access policies.
 
-- Address
-- Width
-- Access policy
-- Reset value
-- Volatility where applicable
-
-The environment also includes:
-
-### RAL Adapter
-
-The adapter converts generic UVM register operations into AXI-Lite sequence items and translates observed bus responses back into UVM register transactions.
-
-### RAL Predictor
-
-The predictor receives transactions from the AXI-Lite monitor and updates the register-model mirror based on activity observed on the bus.
-
-### RAL Verification
-
-Dedicated RAL testing exercises front-door register accesses through the AXI-Lite interface.
-
-The final RAL regression completed with:
+### Register Map
 
 ```text
-UVM_ERROR : 0
-UVM_FATAL : 0
+0x00  CONTROL       RW
+0x04  STATUS        RO
+0x08  CONFIG        RW
+0x0C  IRQ_ENABLE    RW
 ```
+
+The RAL implementation includes:
+
+- `uvm_reg` register classes
+- register fields
+- address-map construction
+- AXI4-Lite register adapter
+- front-door register accesses
+- register prediction
+- mirrored-value checking
+
+A `uvm_reg_predictor` receives transactions from the AXI4-Lite monitor and updates the register model based on observed DUT activity.
 
 ---
 
-# SystemVerilog Assertions
+## SystemVerilog Assertions
 
-Twelve SVA properties are used to check protocol and functional behavior.
+The project contains **12 SVA properties** covering protocol and DUT behavior.
 
-The assertions cover areas including:
+Checks include:
 
-- B-channel response stability during backpressure
-- R-channel response stability during backpressure
-- AW address stability while stalled
-- W data and strobe stability while stalled
-- AR address stability while stalled
-- Write-response generation
-- Read-response generation
-- Reset behavior
+- `BVALID` stability under backpressure
+- `RVALID` stability under backpressure
+- AW channel stability
+- W channel stability
+- AR channel stability
+- write-response generation
+- read-response generation
+- reset behavior
 - START-to-BUSY behavior
 - START self-clear behavior
 - BUSY-to-DONE behavior
 - DONE/BUSY consistency
 
-Assertions run alongside directed and regression testing.
-
-The final clean directed regression completed with **zero SVA assertion failures**.
+The final regression completed with **no SVA assertion failures**.
 
 ---
 
-# Directed Verification
+## Directed Verification
 
-Twelve directed tests exercise specific DUT behaviors and protocol corner cases.
+The directed testbench contains **12 targeted tests**.
 
 | Test | Scenario |
 |---:|---|
 | 1 | CONFIG write/read |
 | 2 | IRQ_ENABLE write/read |
-| 3 | Partial `WSTRB` write |
-| 4 | Invalid write address |
-| 5 | Invalid read address |
-| 6 | START → BUSY → DONE behavior and START self-clear |
+| 3 | Partial write using WSTRB |
+| 4 | Invalid-address write |
+| 5 | Invalid-address read |
+| 6 | START → BUSY → DONE and START self-clear |
 | 7 | STATUS read-only protection |
-| 8 | W channel arriving before AW |
-| 9 | AW channel arriving before delayed W |
-| 10 | B-channel backpressure |
-| 11 | R-channel backpressure |
-| 12 | Reset and post-reset recovery |
+| 8 | Write data before write address |
+| 9 | Write address before delayed write data |
+| 10 | Write-response backpressure |
+| 11 | Read-data backpressure |
+| 12 | Reset and recovery |
 
 Final result:
 
@@ -343,149 +352,202 @@ ALL 12 DIRECTED TESTS PASSED
 
 ---
 
-# Constrained-Random and Negative Testing
+## Constrained-Random Verification
 
-The UVM environment supplements directed tests with constrained-random stimulus.
+The UVM environment generates constrained-random AXI4-Lite transactions across the register map.
 
-Normal constrained-random transactions target legal register accesses, while dedicated negative sequences intentionally exercise illegal behavior such as:
+Randomization covers:
 
-- Invalid write addresses
-- Invalid read addresses
-- Writes to the read-only STATUS register
+- read/write operations
+- register addresses
+- write data
+- write strobes
 
-Separating legal constrained-random stimulus from explicit negative testing makes the intent of each transaction clear and simplifies debugging and coverage analysis.
+Targeted sequences supplement random testing for scenarios that are inefficient to reach purely through random stimulus.
 
----
+This includes:
 
-# Coverage Strategy
-
-Coverage was treated as a feedback mechanism rather than simply a final percentage.
-
-The verification flow used:
-
-1. Directed testing to establish basic functionality.
-2. Constrained-random testing to exercise varied register traffic.
-3. Functional coverage to identify missing scenarios.
-4. Negative sequences to exercise error responses and illegal accesses.
-5. Targeted `WSTRB` stimulus to exercise all byte-enable combinations.
-6. Code-coverage analysis to identify remaining implementation-level holes.
-7. SVA to ensure coverage-oriented stimulus remained protocol-correct.
-
-Increasing random transaction volume alone was not treated as a substitute for targeted coverage closure. Missing scenarios were analyzed before additional stimulus was introduced.
+- `SLVERR` responses
+- STATUS write attempts
+- invalid addresses
+- all 16 possible `WSTRB` values
 
 ---
-
-# Coverage Results
 
 ## Functional Coverage
 
-The final regression achieved **100% modeled functional coverage**.
+The functional coverage model tracks:
 
-- `cp_operation`: **2/2 bins covered**
-- `cp_addr`: **4/4 bins covered**
-- `cp_resp`: **2/2 bins covered**
-- `cp_strb`: **16/16 bins covered**
-- Operation × address cross: **8/8 bins covered**
+- operation type
+- register address
+- AXI response
+- all 16 WSTRB combinations
+- operation × address cross coverage
+
+Final modeled functional coverage:
+
+**100%**
+
+All defined coverpoints and cross bins were covered:
+
+```text
+Operation bins       : 2 / 2
+Address bins         : 4 / 4
+Response bins        : 2 / 2
+WSTRB bins           : 16 / 16
+Operation × Address  : 8 / 8
+```
 
 ![Functional Coverage](docs/images/functional_coverage.png)
-
-The functional coverage result represents closure of the implemented coverage model and should not be interpreted as proof that every theoretically possible DUT behavior has been exhausted.
 
 ---
 
 ## DUT Code Coverage
 
-The final clean DUT code-coverage results were:
+Synopsys VCS/URG was used to collect structural code coverage for the DUT.
 
-| Metric | Coverage |
+Final DUT results:
+
+| Coverage Type | Result |
 |---|---:|
 | Line | **100.00%** |
 | Branch | **93.94%** |
 | Condition | **72.73%** |
 | Toggle | **48.01%** |
 
-All **71/71 executable DUT lines** were exercised.
+All **71/71 DUT executable lines** were covered.
 
 ![DUT Code Coverage](docs/images/dut_code_coverage.png)
 
-Condition and toggle coverage were reviewed separately rather than using the aggregate coverage score as the sole measure of verification quality.
+The lower condition and toggle percentages were retained rather than artificially increasing them with stimulus that could violate the intended AXI4-Lite transaction semantics.
+
+This distinction is important because verification closure should preserve protocol correctness rather than optimize a coverage number in isolation.
 
 ---
 
-# Regression Results
+## Regression Automation
 
-The final regression completed cleanly across the directed, UVM, RAL, and assertion-based verification flows.
-
-![Regression Results](docs/images/regression_results.png)
-
-Final sign-off status:
+The project includes a `tcsh` regression script:
 
 ```text
-Directed tests : 12/12 passed
-Directed failures : 0
+scripts/run_regression.csh
+```
 
+The regression flow:
+
+1. removes stale simulation artifacts
+2. compiles the directed testbench
+3. runs directed verification
+4. collects directed code coverage
+5. compiles the UVM environment
+6. runs constrained-random and targeted UVM verification
+7. collects UVM code coverage
+8. merges coverage databases using URG
+9. runs the dedicated RAL test
+
+Final regression status:
+
+```text
+DIRECTED
+Tests passed = 12
+Failures     = 0
+ALL 12 DIRECTED TESTS PASSED
+
+UVM
 UVM_ERROR : 0
 UVM_FATAL : 0
 
-RAL UVM_ERROR : 0
-RAL UVM_FATAL : 0
+RAL
+UVM_ERROR : 0
+UVM_FATAL : 0
 
-SVA assertion failures : 0
+SVA
+No assertion failures
 ```
 
----
-
-# Verification and Debugging Highlights
-
-Several issues encountered during development required debugging of both the DUT-facing environment and the verification infrastructure itself.
-
-Examples included:
-
-- Debugging VALID/READY timing in the AXI-Lite driver.
-- Verifying independent AW and W channel ordering.
-- Detecting and correcting a directed-test checker path that reported a failure without incrementing the failure counter.
-- Debugging stale VCS incremental-build state during coverage regression.
-- Using functional coverage to identify missing response and `WSTRB` scenarios.
-- Evaluating targeted coverage stimulus against SVA to ensure coverage was not increased using protocol-invalid behavior.
-
-These debugging steps reinforced the distinction between simply generating stimulus and building a self-checking verification environment capable of detecting errors in both the DUT and the testbench.
+![Regression Results](docs/images/regression_results.png)
 
 ---
 
-# Project Structure
+## Debugging Highlights
+
+Several issues encountered during development provided useful verification/debugging experience.
+
+### AXI Driver Timing
+
+Early UVM driver behavior exposed timing issues around `VALID/READY` handshakes.
+
+The driver was updated to:
+
+- drive protocol signals before the sampling edge
+- sample handshakes on the active clock edge
+- deassert signals only after confirmed handshakes
+
+This reinforced the distinction between transaction-level intent and cycle-accurate protocol behavior.
+
+### Independent AW/W Channels
+
+The DUT captures write address and write data independently.
+
+Directed tests explicitly verify:
 
 ```text
-AXI-Lite-UVM-Verification/
-│
-├── rtl/
-│   └── axi_lite_regs.sv
-│
-├── tb/
-│   ├── axi_lite_if.sv
-│   ├── axi_lite_pkg.sv
-│   ├── axi_lite_seq_item.sv
-│   ├── axi_lite_sequence.sv
-│   ├── axi_lite_sequencer.sv
-│   ├── axi_lite_driver.sv
-│   ├── axi_lite_monitor.sv
-│   ├── axi_lite_scoreboard.sv
-│   ├── axi_lite_agent.sv
-│   ├── axi_lite_coverage.sv
-│   ├── axi_lite_env.sv
-│   ├── axi_lite_test.sv
-│   ├── axi_lite_ral_test.sv
-│   ├── tb_axi_lite_regs.sv
-│   └── tb_axi_lite_uvm_top.sv
-│
+AW first → delayed W
+W first  → delayed AW
+```
+
+ensuring the implementation does not incorrectly assume simultaneous channel arrival.
+
+### Backpressure
+
+Dedicated tests hold:
+
+```text
+BREADY = 0
+```
+
+and:
+
+```text
+RREADY = 0
+```
+
+to verify that the DUT correctly maintains response information until the receiver accepts the transaction.
+
+### Coverage Closure
+
+Initial functional coverage exposed missing response and WSTRB scenarios.
+
+Instead of simply increasing random transaction count, targeted sequences were added for:
+
+- error responses
+- read-only register writes
+- all WSTRB combinations
+
+This closed all modeled functional coverage bins.
+
+### Coverage vs. Protocol Correctness
+
+Additional stimulus was experimentally evaluated to improve condition coverage.
+
+SVA detected that the stimulus could create misleading post-handshake `VALID` behavior. The stimulus was rejected and the clean protocol-correct regression was retained.
+
+This left final DUT condition coverage at **72.73%**, while maintaining zero assertion failures.
+
+### Regression Reproducibility
+
+Stale VCS incremental-build artifacts initially caused simulations to execute outdated compiled behavior.
+
+The regression script now removes previous executables, `.daidir` directories, and coverage databases before recompilation.
+
+---
+
+## Project Structure
+
+```text
+.
 ├── assertions/
 │   └── axi_lite_assertions.sv
-│
-├── ral/
-│   ├── axi_lite_reg_model.sv
-│   └── axi_lite_reg_adapter.sv
-│
-├── scripts/
-│   └── run_regression.csh
 │
 ├── docs/
 │   └── images/
@@ -493,69 +555,109 @@ AXI-Lite-UVM-Verification/
 │       ├── functional_coverage.png
 │       └── regression_results.png
 │
+├── ral/
+│   ├── axi_lite_ral_sequence.sv
+│   ├── axi_lite_reg_adapter.sv
+│   └── axi_lite_reg_model.sv
+│
+├── rtl/
+│   └── axi_lite_regs.sv
+│
+├── scripts/
+│   └── run_regression.csh
+│
+├── tb/
+│   ├── axi_lite_agent.sv
+│   ├── axi_lite_coverage.sv
+│   ├── axi_lite_driver.sv
+│   ├── axi_lite_env.sv
+│   ├── axi_lite_if.sv
+│   ├── axi_lite_monitor.sv
+│   ├── axi_lite_pkg.sv
+│   ├── axi_lite_ral_test.sv
+│   ├── axi_lite_scoreboard.sv
+│   ├── axi_lite_sequence.sv
+│   ├── axi_lite_sequencer.sv
+│   ├── axi_lite_seq_item.sv
+│   ├── axi_lite_test.sv
+│   ├── tb_axi_lite_regs.sv
+│   └── tb_axi_lite_uvm_top.sv
+│
 ├── .gitignore
 └── README.md
 ```
 
 ---
 
-# Running the Verification Environment
+## Running the Regression
 
-The project was developed and tested using:
+The project was developed and tested using **Synopsys VCS** with UVM support.
+
+From the project directory:
+
+```tcsh
+source ~/tcshrc_synopsys_local
+cd scripts
+./run_regression.csh
+```
+
+The exact Synopsys environment setup is system-dependent and may need to be modified for a different installation or license environment.
+
+Coverage reports are generated using **Synopsys URG**.
+
+---
+
+## Tools and Technologies
 
 - SystemVerilog
 - UVM
+- SystemVerilog Assertions (SVA)
+- UVM Register Abstraction Layer (RAL)
 - Synopsys VCS
 - Synopsys URG
 - Synopsys Verdi
-
-The regression script compiles and runs:
-
-1. Directed verification
-2. UVM constrained-random and negative testing
-3. Code and functional coverage collection
-4. Coverage database merge and URG report generation
-5. Dedicated UVM RAL testing
-
-Example:
-
-```tcsh
-./scripts/run_regression.csh
-```
-
-The exact Synopsys installation and environment setup is system-dependent and may require modification for a different workstation or EDA environment.
+- Linux / tcsh
+- Git / GitHub
 
 ---
 
-# Key Concepts Demonstrated
+## Key Verification Concepts Demonstrated
 
-This project demonstrates practical experience with:
+This project demonstrates practical use of:
 
 - AXI4-Lite protocol verification
-- SystemVerilog
-- UVM architecture
-- Constrained-random verification
-- Directed and negative testing
-- Self-checking scoreboards
+- VALID/READY handshakes
+- independent AXI write channels
+- protocol backpressure
+- constrained-random stimulus
+- negative testing
+- functional coverage
+- cross coverage
+- coverage-driven verification
+- scoreboarding and reference modeling
 - SystemVerilog Assertions
-- Functional coverage
-- Code coverage analysis
-- Coverage-driven verification
-- UVM Register Abstraction Layer
-- Register prediction
-- AXI backpressure
-- Independent AW/W channel handling
-- Partial writes using `WSTRB`
-- Error-response verification
-- Automated regression
-- Verification debugging
+- UVM transaction-level architecture
+- UVM RAL
+- register prediction
+- byte-enable verification using WSTRB
+- regression automation
+- code coverage analysis
+- debugging using simulation logs and waveforms
 
 ---
 
-## Conclusion
+## Summary
 
-This project demonstrates an end-to-end verification flow for a 32-bit AXI4-Lite register block.
+This project implements a complete verification flow for a memory-mapped AXI4-Lite register block, progressing from directed SystemVerilog testing to a reusable UVM environment with assertions, functional coverage, RAL, negative testing, and automated regression.
 
-The final environment combines directed testing, constrained-random stimulus, negative testing, SVA, functional and code coverage, a self-checking scoreboard, UVM RAL, and automated regression.
+The final regression achieved:
 
-The clean final regression passed all 12 directed tests with zero UVM errors, zero UVM fatals, zero SVA assertion failures, and closed all modeled functional coverage bins while achieving 100% DUT line coverage and 93.94% branch coverage.
+- **12/12 directed tests passing**
+- **0 UVM errors or fatals**
+- **0 RAL errors or fatals**
+- **0 SVA failures**
+- **100% of modeled functional coverage bins closed**
+- **100% DUT line coverage**
+- **93.94% DUT branch coverage**
+
+The project emphasizes not only coverage closure, but also protocol-correct stimulus, reproducible regressions, and debugging of realistic verification issues.
