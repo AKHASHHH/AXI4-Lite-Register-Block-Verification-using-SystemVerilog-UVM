@@ -1,0 +1,35 @@
+# Synopsys VCS generated files
+simv
+simv.*
+simv_*
+csrc/
+*.daidir/
+*.vdb/
+
+# Coverage reports
+coverage_report/
+
+# Waveform databases
+*.fsdb
+*.vpd
+
+# Simulator and debug files
+ucli.key
+*.key
+DVEfiles/
+verdiLog/
+novas.conf
+novas.rc
+.vcs.timestamp
+
+# Logs
+*.log
+
+# Temporary/editor files
+*~
+*.swp
+*.tmp
+
+# OS-generated files
+.DS_Store
+Thumbs.db
