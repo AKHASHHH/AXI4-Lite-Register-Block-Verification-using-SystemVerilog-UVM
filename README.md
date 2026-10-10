@@ -661,3 +661,13 @@ The final regression achieved:
 - **93.94% DUT branch coverage**
 
 The project emphasizes not only coverage closure, but also protocol-correct stimulus, reproducible regressions, and debugging of realistic verification issues.
+
+---
+
+## 👤 Author
+
+---
+
+**D. Akhash Krishna**
+
+GitHub: [AXI4-Lite-Register-Block-Verification-using-SystemVerilog-UVM](https://github.com/AKHASHHH/AXI4-Lite-Register-Block-Verification-using-SystemVerilog-UVM)
