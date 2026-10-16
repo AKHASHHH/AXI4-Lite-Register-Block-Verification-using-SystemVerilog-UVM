@@ -1,5 +1,28 @@
 # AXI4-Lite Register Block Verification using SystemVerilog and UVM
 
+<p align="center"><strong>AXI4-Lite · UVM · SVA · RAL · VCS / URG</strong></p>
+
+<p align="center"><a href="#verification-results">Results</a> &nbsp;·&nbsp; <a href="#dut-overview">DUT</a> &nbsp;·&nbsp; <a href="#verification-architecture">Architecture</a> &nbsp;·&nbsp; <a href="#uvm-components">UVM/RAL</a> &nbsp;·&nbsp; <a href="#functional-coverage">Coverage</a> &nbsp;·&nbsp; <a href="#running-the-regression">Regression</a> &nbsp;·&nbsp; <a href="#-author">Author</a></p>
+
+## Verification flow at a glance
+
+```mermaid
+flowchart LR
+  SEQ["UVM sequences / directed stimulus"] --> DRV["AXI4-Lite driver"]
+  DRV --> DUT["32-bit register block DUT"]
+  DUT --> MON["AXI monitors"]
+  DRV --> MON
+  MON --> SCB["Scoreboard / reference prediction"]
+  MON --> COV["Functional coverage"]
+  DUT --> SVA["Protocol / behavior assertions"]
+  RAL["UVM register model"] <--> SEQ
+  SCB --> RES["Regression results"]
+  COV --> RES
+  SVA --> RES
+```
+
+*Visual overview of components and checks described below. The detailed implementation and results remain unchanged.*
+
 A complete verification environment for a **32-bit AXI4-Lite register block**, developed using **SystemVerilog, UVM, SVA, UVM RAL, constrained-random verification, functional coverage, and Synopsys VCS/URG**.
 
 The project verifies AXI4-Lite protocol behavior, register functionality, error responses, byte-write strobes, channel ordering, backpressure, reset recovery, and register-model behavior using both directed and UVM-based verification.
